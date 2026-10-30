@@ -16,6 +16,7 @@ public:
     bool keyPressed (const juce::KeyPress&) override;
 
     void showView (int index);
+    int visibleView() const { return currentView; }
     BolinhaProcessor& processor() { return proc; }
     void setStatus (const juce::String& text);
 

@@ -3,11 +3,11 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "Engine.h"
 
-class BolinhaProcessor : public juce::AudioProcessor, public juce::ChangeBroadcaster
+class BolinhaProcessor : public juce::AudioProcessor, public juce::ChangeBroadcaster, private juce::Timer
 {
 public:
     BolinhaProcessor();
-    ~BolinhaProcessor() override = default;
+    ~BolinhaProcessor() override { stopTimer(); }
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -24,7 +24,8 @@ public:
     double getTailLengthSeconds() const override { return 4.0; }
 
     int getNumPrograms() override { return juce::jmax (1, numPatches()); }
-    int getCurrentProgram() override { return (int) *patchParam; }
+    // The host program follows the patch of the channel selected in the editor.
+    int getCurrentProgram() override { return juce::jmax (0, partPatch (selectedPart())); }
     void setCurrentProgram (int index) override;
     const juce::String getProgramName (int index) override;
     void changeProgramName (int, const juce::String&) override {}
@@ -79,12 +80,14 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     void syncGlobals();
+    void timerCallback() override;
     void reapplyEdits (int part);
 
     juce::String loadError;
     std::shared_ptr<const cure::Library> library;
     cure::Engine engine;
     int currentPatch = -1;
+    int hostProgram = -1;
 
     struct Edit { int part, layer, index; float value; };
     juce::AbstractFifo editFifo { 2048 };

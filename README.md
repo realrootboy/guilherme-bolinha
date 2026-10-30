@@ -2,7 +2,7 @@
 
 ![Guilherme Bolinha — logo orbital](assets/logo.png)
 
-Instrumento multitimbral de 16 canais em C++/JUCE, com biblioteca sonora completa de 1366 patches incluída. Biblioteca Phoenix/Cure. Versão do projeto: 1.0.1.
+Instrumento multitimbral de 16 canais em C++/JUCE, com biblioteca sonora completa de 1366 patches incluída. Biblioteca Phoenix/Cure. Versão do projeto: 1.0.2.
 
 ## Instalação
 

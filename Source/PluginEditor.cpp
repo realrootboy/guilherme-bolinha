@@ -780,21 +780,6 @@ public:
         }
     }
 
-    bool handleKey (const juce::KeyPress& k) override
-    {
-        const auto c = k.getTextCharacter();
-        if (c == '9' || c == '0')
-        {
-            for (int p = 0; p < BolinhaProcessor::kParts; ++p)
-            {
-                auto& v = proc.part (p).volume;
-                v = juce::jlimit (0.0f, 1.0f, v.load() + (c == '9' ? 1.0f : -1.0f) / 127.0f);
-            }
-            return true;
-        }
-        return false;
-    }
-
 private:
     juce::OwnedArray<ChannelStrip> strips;
     juce::OwnedArray<ParamKnob> knobs;
@@ -962,7 +947,6 @@ public:
 
     bool handleKey (const juce::KeyPress& k) override
     {
-        const auto c = k.getTextCharacter();
         if (k == juce::KeyPress::pageUpKey || k == juce::KeyPress::pageDownKey)
         {
             const auto* lib = proc.getLibrary();
@@ -971,8 +955,6 @@ public:
             patches.selectRow (0);
             return true;
         }
-        if (c == 'f' || c == 'F') { onTheFly.triggerClick(); return true; }
-        if (c >= '1' && c <= '5' && ! saveName.hasKeyboardFocus (false)) { setColour (patches.getSelectedRow(), c - '0'); return true; }
         if (k.getKeyCode() == juce::KeyPress::returnKey) { loadSelected(); return true; }
         return false;
     }
@@ -1376,7 +1358,7 @@ public:
             pages[p]->setToggleState (true, juce::sendNotification);
             return true;
         }
-        if (k.getTextCharacter() == 'r' || k.getTextCharacter() == 'R')
+        if (k.getKeyCode() == juce::KeyPress::deleteKey)
         {
             for (int l = 0; l < 5; ++l) for (int s = 0; s < 64; ++s) grid.setCode (l, s, 100);
             grid.repaint();
@@ -1747,7 +1729,6 @@ bool BolinhaEditor::keyPressed (const juce::KeyPress& k)
     auto* focused = juce::Component::getCurrentlyFocusedComponent();
     if (dynamic_cast<juce::TextEditor*> (focused) != nullptr) return false;
     if (views[currentView]->handleKey (k)) return true;
-    const auto c = juce::CharacterFunctions::toLowerCase (k.getTextCharacter());
     const bool cmd = k.getModifiers().isCommandDown();
     if (cmd && (k.getKeyCode() == juce::KeyPress::upKey || k.getKeyCode() == juce::KeyPress::downKey))
     {
@@ -1760,34 +1741,7 @@ bool BolinhaEditor::keyPressed (const juce::KeyPress& k)
         proc.loadPatch (part, proc.partPatch (part) + (k.getKeyCode() == juce::KeyPress::homeKey ? -1 : 1));
         return true;
     }
-    if (k.getKeyCode() == juce::KeyPress::escapeKey || c == 'z') { proc.panic(); return true; }
-    if (cmd) return false;
-    switch (c)
-    {
-        case 'm': showView (0); return true;
-        case 'p': showView (1); return true;
-        case 'e': showView (2); return true;
-        case 's': showView (3); return true;
-        case 'u': showView (4); return true;
-        case 'a': priorityButton.triggerClick(); return true;
-        case 't':
-            if (auto* prm = proc.apvts.getParameter ("ifx")) prm->setValueNotifyingHost (prm->getValue() >= 0.5f ? 0.0f : 1.0f);
-            return true;
-        case 'q':
-        {
-            const int part = proc.selectedPart();
-            for (int l = 0; l < proc.numLayers (part); ++l)
-                proc.setLayerValue (part, l, 20, proc.layerValue (part, l, 20) >= 0.5f ? 0.0f : 1.0f);
-            return true;
-        }
-        case 'v':
-        {
-            juce::String msg;
-            proc.saveToUserBank (proc.selectedPart(), {}, msg);
-            setStatus (msg);
-            return true;
-        }
-        default: break;
-    }
+    if (k.getKeyCode() == juce::KeyPress::escapeKey) { proc.panic(); return true; }
+    // Letter and number keys stay with the host, which plays them as notes (FL Studio typing keyboard).
     return false;
 }

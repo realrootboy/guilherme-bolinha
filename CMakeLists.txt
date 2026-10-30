@@ -8,7 +8,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(GuilhermeBolinha VERSION 1.0.1)
+project(GuilhermeBolinha VERSION 1.0.2)
 
 # JUCE: use a local checkout when present (JUCE_DIR), otherwise download it.
 set(JUCE_DIR "$ENV{HOME}/Developer/JUCE" CACHE PATH "Path to a JUCE checkout")

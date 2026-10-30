@@ -34,6 +34,7 @@ BolinhaProcessor::BolinhaProcessor()
             raw[wp->paramID.toStdString()] = apvts.getRawParameterValue (wp->paramID);
 
     if (library != nullptr) engine.gmReset();
+    startTimerHz (10);
 }
 
 std::atomic<float>* BolinhaProcessor::rp (const char* id)
@@ -220,8 +221,18 @@ void BolinhaProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 // ---------------------------------------------------------------------------
 void BolinhaProcessor::setCurrentProgram (int index)
 {
-    if (patchParam != nullptr)
-        *patchParam = juce::jlimit (0, juce::jmax (0, numPatches() - 1), index);
+    // Hosts echo the program back after updateHostDisplay; reloading would drop the channel's edits.
+    if (index != partPatch (selectedPart()))
+        loadPatch (selectedPart(), index);
+}
+
+void BolinhaProcessor::timerCallback()
+{
+    // Patches also change from the editor, MIDI program changes and GM resets, on any channel.
+    const int program = selectedPart() * kMaxPatches + partPatch (selectedPart());
+    if (program == hostProgram) return;
+    hostProgram = program;
+    updateHostDisplay (juce::AudioProcessor::ChangeDetails().withProgramChanged (true));
 }
 
 juce::String BolinhaProcessor::patchDisplayName (int index) const
@@ -248,10 +259,11 @@ void BolinhaProcessor::loadPatch (int p, int patchIndex)
     patchIndex = juce::jlimit (0, numPatches() - 1, patchIndex);
     if (p == 0)
     {
+        // A MIDI program change may have moved channel 1 away from the parameter's value.
+        if ((int) *patchParam == patchIndex) engine.part (p).requestedPatch = patchIndex;
         patchParam->beginChangeGesture();
         *patchParam = patchIndex;
         patchParam->endChangeGesture();
-        updateHostDisplay (juce::AudioProcessor::ChangeDetails().withProgramChanged (true));
     }
     else
         engine.part (p).requestedPatch = patchIndex;
