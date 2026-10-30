@@ -1,0 +1,9 @@
+.DS_Store
+build/
+# Referências locais e instalador de origem (conteúdo distribuído em Resources/Cure)
+setup.exe
+extracted/
+
+# Generated release packages
+dist/
+staging/

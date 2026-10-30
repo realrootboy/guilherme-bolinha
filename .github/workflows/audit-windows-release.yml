@@ -1,0 +1,44 @@
+name: Audit published Windows release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published release tag
+        required: true
+        default: v1.0.1
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: windows-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download published installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download $env:RELEASE_VERSION --repo $env:GITHUB_REPOSITORY --pattern Guilherme-Bolinha-Windows.exe --dir dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-FileHash dist/Guilherme-Bolinha-Windows.exe -Algorithm SHA256
+      - name: Install on isolated runner and audit actual files
+        shell: pwsh
+        run: |
+          $installPath = Join-Path $env:RUNNER_TEMP 'PhoenixCureInstall'
+          $installer = (Resolve-Path dist/Guilherme-Bolinha-Windows.exe).Path
+          $arguments = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR="' + $installPath + '"'
+          $process = Start-Process -FilePath $installer -ArgumentList $arguments -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer exit code: $($process.ExitCode)" }
+          $libraryPath = Join-Path $env:ProgramData 'Guilherme Bolinha\Cure'
+          $pluginPath = Join-Path $env:CommonProgramFiles 'VST3\Guilherme Bolinha.vst3'
+          $modulePath = Join-Path $pluginPath 'Contents\x86_64-win\Guilherme Bolinha.vst3'
+          if (-not (Test-Path $modulePath)) { throw 'Installed VST3 module is missing' }
+          python installer/verify-content.py $libraryPath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python installer/verify-branding.py $installPath $pluginPath $libraryPath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = (Get-Item (Join-Path $installPath 'Guilherme Bolinha.exe')).VersionInfo.ProductVersion
+          $expectedVersion = $env:RELEASE_VERSION -replace '^v', ''
+          if (-not $version.StartsWith($expectedVersion)) { throw "Unexpected product version: $version" }

@@ -1,0 +1,101 @@
+name: Build and release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify bundled sound library
+        run: python installer/verify-content.py Resources/Cure
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libjack-jackd2-dev libfreetype6-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libgl1-mesa-dev libcurl4-openssl-dev xvfb
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGB_BUILD_TOOLS=ON
+      - name: Build
+        run: cmake --build build --config Release --target BolinhaRelease --parallel 3
+      - name: Test packaged VST3 through a host
+        shell: bash
+        run: |
+          host="build/BolinhaHostTest_artefacts/Release/BolinhaHostTest"
+          plugin="$PWD/build/GuilhermeBolinha_artefacts/Release/VST3/Guilherme Bolinha.vst3"
+          if [ "${{ runner.os }}" = "Windows" ]; then host="$host.exe"; fi
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            xattr -cr "$plugin"
+            codesign --force --deep --sign - "$plugin"
+          fi
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            xvfb-run -a "$host" "$plugin"
+          else
+            "$host" "$plugin"
+          fi
+      - name: Package macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p dist staging/Library/Audio/Plug-Ins/Components staging/Library/Audio/Plug-Ins/VST3 staging/Applications
+          cp -R build/GuilhermeBolinha_artefacts/Release/AU/*.component staging/Library/Audio/Plug-Ins/Components/
+          cp -R build/GuilhermeBolinha_artefacts/Release/VST3/*.vst3 staging/Library/Audio/Plug-Ins/VST3/
+          cp -R build/GuilhermeBolinha_artefacts/Release/Standalone/*.app staging/Applications/
+          mkdir -p 'staging/Library/Application Support/Guilherme Bolinha'
+          cp -R Resources/Cure 'staging/Library/Application Support/Guilherme Bolinha/'
+          xattr -cr staging
+          codesign --force --deep --sign - 'staging/Library/Audio/Plug-Ins/Components/Guilherme Bolinha.component'
+          codesign --force --deep --sign - 'staging/Library/Audio/Plug-Ins/VST3/Guilherme Bolinha.vst3'
+          codesign --force --deep --sign - 'staging/Applications/Guilherme Bolinha.app'
+          codesign --verify --deep --strict 'staging/Library/Audio/Plug-Ins/Components/Guilherme Bolinha.component'
+          codesign --verify --deep --strict 'staging/Library/Audio/Plug-Ins/VST3/Guilherme Bolinha.vst3'
+          codesign --verify --deep --strict 'staging/Applications/Guilherme Bolinha.app'
+          pkgbuild --analyze --root staging components.plist
+          python3 installer/configure-macos-components.py components.plist
+          pkgbuild --root staging --component-plist components.plist --identifier com.guilhermebolinha.vst --version 1.0.1 --install-location / dist/Guilherme-Bolinha-macOS.pkg
+      - name: Package Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p dist staging
+          cp -R build/GuilhermeBolinha_artefacts/Release/VST3/*.vst3 staging/
+          cp -R build/GuilhermeBolinha_artefacts/Release/LV2/*.lv2 staging/
+          cp build/GuilhermeBolinha_artefacts/Release/Standalone/'Guilherme Bolinha' staging/
+          cp installer/install.sh README.md staging/
+          mkdir -p staging/assets
+          cp assets/logo.png staging/assets/
+          cp -R Resources/Cure staging/
+          chmod +x staging/install.sh
+          tar -czf dist/Guilherme-Bolinha-Linux.tar.gz -C staging .
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:GB_VERSION = '1.0.1'
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer/windows.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ runner.os }}
+          path: dist/*
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          merge-multiple: true
+          path: dist
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Guilherme Bolinha VST $GITHUB_REF_NAME" --notes 'AU/VST3/Standalone for macOS, VST3/Standalone for Windows, VST3/LV2/Standalone for Linux. The complete sound library (1366 factory patches) is included and installed automatically. macOS packages are unsigned and not notarized; Windows installers are unsigned.'
