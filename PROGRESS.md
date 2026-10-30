@@ -4,8 +4,8 @@ _Concluído em 2026-10-30. Repositório privado, tag e release publicados._
 
 ## Resultado
 
-- [Release Guilherme Bolinha VST v1.0.0](https://github.com/realrootboy/guilherme-bolinha/releases/tag/v1.0.0)
-- [CI da release: os três builds, testes de host e publicação passaram](https://github.com/realrootboy/guilherme-bolinha/actions/runs/41065462369)
+- [Release Guilherme Bolinha VST v1.0.0](https://github.com/realrootboy/gb-vst/releases/tag/v1.0.0)
+- [CI da release: os três builds, testes de host e publicação passaram](https://github.com/realrootboy/gb-vst/actions/runs/41065462369)
 - Tag `v1.0.0`, código do commit `63451470af61c8d92006fb8cdeb3c19968eb3535`.
 - Visibilidade **PRIVATE** confirmada pela API após a publicação.
 

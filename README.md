@@ -1,4 +1,4 @@
-# Guilherme Bolinha VST
+# GB VST
 
 ![Guilherme Bolinha — logo orbital](assets/logo.png)
 
@@ -6,7 +6,7 @@ Instrumento multitimbral de 16 canais em C++/JUCE, com biblioteca sonora complet
 
 ## Instalação
 
-Baixe o pacote do seu sistema na [página de releases](https://github.com/realrootboy/guilherme-bolinha/releases).
+Baixe o pacote do seu sistema na [página de releases](https://github.com/realrootboy/gb-vst/releases).
 
 - **macOS 11+ (Apple Silicon e Intel):** execute o `.pkg`. Instala AU e VST3 em `/Library/Audio/Plug-Ins` e o Standalone em `/Applications`. O pacote não tem assinatura Developer ID nem notarização.
 - **Windows x64:** execute o instalador `.exe`. O VST3 vai para `Common Files\VST3`; o Standalone fica em Program Files. O instalador não tem assinatura digital.
