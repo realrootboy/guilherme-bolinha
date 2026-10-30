@@ -102,7 +102,7 @@ if(GB_BUILD_TOOLS)
     juce_add_console_app(BolinhaHostTest PRODUCT_NAME "BolinhaHostTest")
     target_sources(BolinhaHostTest PRIVATE Tools/HostTest.cpp)
     target_compile_features(BolinhaHostTest PRIVATE cxx_std_17)
-    target_compile_definitions(BolinhaHostTest PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=1
+    target_compile_definitions(BolinhaHostTest PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=1 JUCE_MODAL_LOOPS_PERMITTED=1
         $<$<PLATFORM_ID:Darwin>:JUCE_PLUGINHOST_AU=1>)
     target_link_libraries(BolinhaHostTest PRIVATE juce::juce_audio_processors juce::juce_recommended_config_flags)
     if(APPLE)
