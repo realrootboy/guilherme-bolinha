@@ -131,7 +131,10 @@ int main (int argc, char** argv)
             insts.push_back (std::move (p));
         }
         juce::Random rnd (7);
-        std::vector<float> tailPeak (insts.size(), 0.0f), notePeak (insts.size(), 0.0f);
+        // the tail is judged by RMS: LP Noise presets add sparse random crackles on purpose
+        std::vector<float> notePeak (insts.size(), 0.0f);
+        std::vector<double> tailSum (insts.size(), 0.0);
+        int tailCount = 0;
         std::vector<bool> finite (insts.size(), true);
         juce::AudioBuffer<float> buf (2, 1024);
         for (int pos = 0; pos < (int) (sr * 5);)
@@ -154,17 +157,18 @@ int main (int argc, char** argv)
                     {
                         const float x = buf.getSample (c, i);
                         if (! std::isfinite (x)) finite[k] = false;
-                        auto& peak = pos + i > (int) (sr * 4) ? tailPeak[k] : notePeak[k];
-                        peak = juce::jmax (peak, std::abs (x));
+                        if (pos + i > (int) (sr * 4)) { tailSum[k] += (double) x * x; if (k == 0) ++tailCount; }
+                        else notePeak[k] = juce::jmax (notePeak[k], std::abs (x));
                     }
             }
             pos += n;
         }
         for (size_t k = 0; k < insts.size(); ++k)
         {
-            const bool ok = finite[k] && notePeak[k] > 1.0e-4f && tailPeak[k] < 0.02f;
-            std::printf ("multi-instance: program %4d %-30s peak=%.3f tail=%.5f %s\n", progs[k],
-                         insts[k]->getProgramName (progs[k]).toRawUTF8(), notePeak[k], tailPeak[k], ok ? "ok" : "FAILED");
+            const float tailRms = (float) std::sqrt (tailSum[k] / juce::jmax (1, tailCount));
+            const bool ok = finite[k] && notePeak[k] > 1.0e-4f && tailRms < 0.005f;
+            std::printf ("multi-instance: program %4d %-30s peak=%.3f tailRMS=%.5f %s\n", progs[k],
+                         insts[k]->getProgramName (progs[k]).toRawUTF8(), notePeak[k], tailRms, ok ? "ok" : "FAILED");
             if (! ok) failed = true;
             insts[k]->releaseResources();
         }
