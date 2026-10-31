@@ -1129,9 +1129,12 @@ void Engine::process (juce::AudioBuffer<float>& buffer, float* subL, float* subR
     }
     for (; it != midi.end(); ++it) handleMidi ((*it).getMessage());
     if (R == nullptr) return;
-    // safety soft-clip: transparent below 0.8, saturates smoothly towards 1.0
-    auto clip = [] (float x)
+    // safety soft-clip: transparent below 0.8, saturates smoothly towards 1.0.
+    // A non-finite sample is muted and the feedback effects are flushed so it cannot recirculate.
+    bool nonFinite = false;
+    auto clip = [&nonFinite] (float x)
     {
+        if (! std::isfinite (x)) { nonFinite = true; return 0.0f; }
         const float a = std::abs (x);
         return a < 0.8f ? x : std::copysign (0.8f + 0.2f * std::tanh ((a - 0.8f) / 0.2f), x);
     };
@@ -1148,6 +1151,17 @@ void Engine::process (juce::AudioBuffer<float>& buffer, float* subL, float* subR
             subR[i] = clip (subR[i]);
             subPeak = juce::jmax (subPeak, std::abs (subL[i]), std::abs (subR[i]));
         }
+    if (nonFinite)
+    {
+        sfx.reset();
+        for (auto& part : parts)
+            for (auto& lr : part.layers)
+                for (auto& f : lr->ifx) f.reset();
+        for (auto& v : voices)
+            if (v.active && (! std::isfinite (v.svf[0].ic1) || ! std::isfinite (v.svf[0].ic2)
+                             || ! std::isfinite (v.svf[1].ic1) || ! std::isfinite (v.svf[1].ic2)))
+                v.active = false;
+    }
     auto hold = [] (std::atomic<float>& m, float v) { if (v > m.load()) m = v; };
     for (int p = 0; p < 16; ++p) hold (parts[(size_t) p].meter, partPeak[p]);
     hold (mainMeter, mainPeak);

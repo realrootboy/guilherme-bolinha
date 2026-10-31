@@ -114,5 +114,60 @@ int main (int argc, char** argv)
     }
 
     inst->releaseResources();
+
+    // Several instances side by side (as when a DAW project loads the plugin more than once),
+    // with irregular block sizes: every one must stay finite and fall silent after its notes end.
+    {
+        constexpr double sr = 48000;
+        std::vector<std::unique_ptr<juce::AudioPluginInstance>> insts;
+        const int progs[] = { 0, 1, 468, 1098 };
+        for (int prog : progs)
+        {
+            auto p = fm.createPluginInstance (*types[0], sr, 1024, err);
+            if (! p) { std::printf ("multi-instance: load failed: %s\n", err.toRawUTF8()); return 1; }
+            p->setPlayConfigDetails (0, 2, sr, 1024);
+            p->prepareToPlay (sr, 1024);
+            if (prog < p->getNumPrograms()) p->setCurrentProgram (prog);
+            insts.push_back (std::move (p));
+        }
+        juce::Random rnd (7);
+        std::vector<float> tailPeak (insts.size(), 0.0f), notePeak (insts.size(), 0.0f);
+        std::vector<bool> finite (insts.size(), true);
+        juce::AudioBuffer<float> buf (2, 1024);
+        for (int pos = 0; pos < (int) (sr * 5);)
+        {
+            const int n = 1 + rnd.nextInt (1024);
+            for (size_t k = 0; k < insts.size(); ++k)
+            {
+                juce::MidiBuffer midi;
+                auto at = [&] (double t) { const int s = (int) (t * sr) - pos; return s >= 0 && s < n ? s : -1; };
+                for (int note : { 48, 60, 64, 67 })
+                {
+                    if (const int s = at (0.1); s >= 0) midi.addEvent (juce::MidiMessage::noteOn (1, note, (juce::uint8) 110), s);
+                    if (const int s = at (1.0); s >= 0) midi.addEvent (juce::MidiMessage::noteOff (1, note), s);
+                }
+                buf.setSize (2, n, false, false, true);
+                buf.clear();
+                insts[k]->processBlock (buf, midi);
+                for (int c = 0; c < 2; ++c)
+                    for (int i = 0; i < n; ++i)
+                    {
+                        const float x = buf.getSample (c, i);
+                        if (! std::isfinite (x)) finite[k] = false;
+                        auto& peak = pos + i > (int) (sr * 4) ? tailPeak[k] : notePeak[k];
+                        peak = juce::jmax (peak, std::abs (x));
+                    }
+            }
+            pos += n;
+        }
+        for (size_t k = 0; k < insts.size(); ++k)
+        {
+            const bool ok = finite[k] && notePeak[k] > 1.0e-4f && tailPeak[k] < 0.02f;
+            std::printf ("multi-instance: program %4d %-30s peak=%.3f tail=%.5f %s\n", progs[k],
+                         insts[k]->getProgramName (progs[k]).toRawUTF8(), notePeak[k], tailPeak[k], ok ? "ok" : "FAILED");
+            if (! ok) failed = true;
+            insts[k]->releaseResources();
+        }
+    }
     return failed ? 1 : 0;
 }

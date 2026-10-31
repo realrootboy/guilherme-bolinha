@@ -57,7 +57,7 @@ jobs:
           codesign --verify --deep --strict 'staging/Applications/Guilherme Bolinha.app'
           pkgbuild --analyze --root staging components.plist
           python3 installer/configure-macos-components.py components.plist
-          pkgbuild --root staging --component-plist components.plist --identifier com.guilhermebolinha.vst --version 1.0.2 --install-location / dist/Guilherme-Bolinha-macOS.pkg
+          pkgbuild --root staging --component-plist components.plist --identifier com.guilhermebolinha.vst --version 1.0.3 --install-location / dist/Guilherme-Bolinha-macOS.pkg
       - name: Package Linux
         if: runner.os == 'Linux'
         shell: bash
@@ -76,7 +76,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $env:GB_VERSION = '1.0.2'
+          $env:GB_VERSION = '1.0.3'
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer/windows.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4

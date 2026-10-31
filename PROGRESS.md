@@ -96,3 +96,12 @@ Notas técnicas do formato em `FORMAT.md`.
 - Nenhuma ocorrência dos nomes anteriores nos arquivos versionados, incluindo os dados binários.
 - Manifesto SHA-256 regenerado; verificação exige explicitamente o cabeçalho Phoenix/Cure.
 - Versão 1.0.1 em build/teste antes de publicar novos instaladores.
+
+## 1.0.3 — chiados e ruídos
+
+- **Chiado alto com várias instâncias (FL Studio):** `DelayLine::read` calculava a posição em `float`; o índice podia arredondar para o tamanho do buffer e ler uma amostra fora da memória (confirmado com AddressSanitizer). O lixo entrava no reverb/chorus/delays com realimentação e travava a saída em volume máximo, de forma dependente do heap, o que ficava mais provável com várias instâncias. Índice agora calculado em inteiros; amostras não finitas são silenciadas e limpam as caudas dos efeitos.
+- **Divergências contra o binário original (Purity.dll 1.1.2, classes `CIFX*`):**
+  - LP Noise: soma ruído de vinil ao sinal seco (não filtra a entrada); ruído triangular `0.02·Dirt²` limitado em banda pelo Year (1950–2000), estalos esparsos `x^256·Crackle²`. Antes era ruído branco de banda cheia com estalos de 0,5.
+  - Crusher: Rate `1 + P1³·191999 Hz`, Bits `P2²·16 + 1`, P3 = cutoff de passa-baixa, 100% processado. Antes Rate e Bits estavam invertidos (P=1 destruía o som) e P3 era mix.
+  - Overdrive/Distortion/Amp Distortion: Drive (`1+3·P1` / `1+7·P1`), Tone (passa-baixa `1000 + {0.5, 0.9, 0.215}·f(P2)` Hz), Level (P3), curvas de clip das tabelas originais (pico ≈ −4 dBFS), 100% processado. Antes havia viés DC no Amp Distortion, que mantinha presets como Power Chords em volume máximo após soltar as notas.
+- **Validação:** 1366 patches renderizados sob ASan/UBSan e com 4 engines simultâneas a 48/96 kHz e blocos irregulares: nenhum acesso inválido, nenhuma amostra não finita, nenhum preset mudo. `BolinhaHostTest` ganhou um teste com 4 instâncias simultâneas que exige silêncio após as notas; ele falha com o código anterior (Power Chords) e passa com o atual.

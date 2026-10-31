@@ -75,6 +75,8 @@ namespace
         for (int n : notes) m.push_back (on ? juce::MidiMessage::noteOn (1, n, (juce::uint8) 100) : juce::MidiMessage::noteOff (1, n));
         return m;
     }
+
+    constexpr int rate16 = 10;        // index of 1/16 in the 18-entry rate table
 }
 
 int main (int argc, char** argv)
@@ -90,7 +92,6 @@ int main (int argc, char** argv)
         if (lib->patches[(size_t) i].layers.size() == 1 && lib->patches[(size_t) i].layers[0].p.size() == 727) patch = i;
     std::printf ("using patch %d: %s\n", patch, lib->patches[(size_t) patch].name.c_str());
 
-    const int rate16 = 10;            // index of 1/16 in the 18-entry rate table
     auto setup = [&] (Rig& r, int pattern, int octaves, int rate = rate16)
     {
         r.set (kArpOn, 1); r.set (kKeySync, 1); r.set (kLatch, 0); r.set (kGate, 0.5f);

@@ -2,7 +2,7 @@
 
 ![Guilherme Bolinha — logo orbital](assets/logo.png)
 
-Instrumento multitimbral de 16 canais em C++/JUCE, com biblioteca sonora completa de 1366 patches incluída. Biblioteca Phoenix/Cure. Versão do projeto: 1.0.2.
+Instrumento multitimbral de 16 canais em C++/JUCE, com biblioteca sonora completa de 1366 patches incluída. Biblioteca Phoenix/Cure. Versão do projeto: 1.0.3.
 
 ## Instalação
 
@@ -43,6 +43,7 @@ Esta é uma implementação independente. Presença de um controle não implica 
 | Edição melody/drum, filtros, envelopes, LFO e IFX | ⚠️ Implementado; equivalência sonora completa não comprovada |
 | Semitone de drum | ⚠️ Código usa ±48 semitons; manual 1.1.2 indica ±12. Paridade desse mapeamento não validada |
 | Nomes/unidades dos parâmetros de IFX | ⚠️ Controles P1–P3 normalizados, sem rótulos específicos de cada efeito |
+| IFX Overdrive, Distortion, Amp Distortion, Crusher e LP Noise | ✅ Mapeamento de parâmetros, curvas e faixas conferidos contra o binário 1.1.2 (Drive/Tone/Level; Rate/Bits/Cutoff; Crackle/Dirt/Year) |
 | Arpeggiador: 8 padrões, 18 rates, 1–6 oitavas, gate, latch e sync | ✅ Coberto pelo teste automatizado de arp |
 | Sequenciador: 5 lanes, até 64 passos | ⚠️ Editor e engine implementados; validação manual pendente |
 | Chorus/reverb, afinação, escalas, curvas de velocity e GM reset | ⚠️ Implementado; paridade completa não comprovada |

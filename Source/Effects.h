@@ -76,6 +76,31 @@ struct Svf
     }
 };
 
+// Butterworth (Q = 0.7071) biquad, direct form I.
+struct Biquad
+{
+    float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    void lowpass (float fc, float fs) { design (fc, fs, false); }
+    void highpass (float fc, float fs) { design (fc, fs, true); }
+    void reset() { x1 = x2 = y1 = y2 = 0; }
+    inline float tick (float x)
+    {
+        const float y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+        x2 = x1; x1 = x; y2 = y1; y1 = y;
+        return y;
+    }
+private:
+    void design (float fc, float fs, bool high)
+    {
+        const float w = juce::MathConstants<float>::twoPi * juce::jlimit (10.0f, 0.46f * fs, fc) / fs;
+        const float cw = std::cos (w), alpha = std::sin (w) * 0.70710678f;   // sin(w) / (2Q)
+        const float a0 = 1.0f + alpha;
+        const float b = high ? (1.0f + cw) * 0.5f : (1.0f - cw) * 0.5f;
+        b0 = b / a0; b1 = (high ? -2.0f : 2.0f) * b / a0; b2 = b0;
+        a1 = -2.0f * cw / a0; a2 = (1.0f - alpha) / a0;
+    }
+};
+
 class DelayLine
 {
 public:
@@ -86,11 +111,13 @@ public:
     {
         const int n = (int) buf.size();
         delaySamples = juce::jlimit (1.0f, (float) (n - 3), delaySamples);
-        float rp = (float) w - delaySamples;
-        while (rp < 0) rp += (float) n;
-        const int i0 = (int) rp;
-        const float fr = rp - (float) i0;
-        const int i1 = (i0 + 1) % n;
+        // split into whole and fractional parts so the index never rounds up to n
+        const int whole = (int) delaySamples;
+        const float fr0 = delaySamples - (float) whole;
+        int i0 = w - whole - (fr0 > 0.0f ? 1 : 0);
+        if (i0 < 0) i0 += n;
+        const float fr = fr0 > 0.0f ? 1.0f - fr0 : 0.0f;
+        const int i1 = i0 + 1 < n ? i0 + 1 : 0;
         return buf[(size_t) i0] + (buf[(size_t) i1] - buf[(size_t) i0]) * fr;
     }
 private:
@@ -115,7 +142,11 @@ public:
         dl[0].clear(); dl[1].clear();
         for (auto& f : filt) f.reset();
         for (auto& s : allpass) s = 0;
-        env = 0; phase = 0; crushHold[0] = crushHold[1] = 0; crushCount = 0; fb[0] = fb[1] = 0;
+        env = 0; phase = 0; crushHold[0] = crushHold[1] = 0; crushPhase = 0;
+        crushLp[0].reset(); crushLp[1].reset(); fb[0] = fb[1] = 0;
+        driveLp[0].reset(); driveLp[1].reset();
+        noiseHp.reset(); noiseLp.reset();
+        crackleClock = 1; crackleLevel = p0; dirtLevel = p1;
         reverb.reset();
         eqState = {};
     }
@@ -171,9 +202,12 @@ private:
     Svf filt[4];
     float allpass[12] {};
     float env = 0, fb[2] {};
+    Biquad driveLp[2];                              // drive tone
+    Biquad noiseHp, noiseLp;                        // LP noise band
+    float crackleClock = 1, crackleLevel = 0, dirtLevel = 0;
     double phase = 0;
-    float crushHold[2] {};
-    int crushCount = 0;
+    float crushHold[2] {}, crushPhase = 0;
+    Biquad crushLp[2];
     juce::Random rng;
     juce::Reverb reverb;
     struct { float z[3][2][2] {}; } eqState;
@@ -233,52 +267,80 @@ private:
         }
     }
 
-    void drive (float* L, float* R, int n)
+    // Clipping curve of the original drive tables (input clamped to +-1, in 16-bit units):
+    // linear up to the knee, then a very flat rise, normalised so the output peaks near -4 dBFS.
+    static float driveCurve (float x, bool overdrive)
     {
-        const float gain = 1.0f + p0 * 7.0f;
-        filt[0].set ((float) cutoffHz (0.5f + 0.5f * p1), fs, 0);
-        filt[1].set ((float) cutoffHz (0.5f + 0.5f * p1), fs, 0);
-        for (int i = 0; i < n; ++i)
-            for (int c = 0; c < 2; ++c)
-            {
-                float* x = c ? R : L;
-                float d = x[i] * gain, y;
-                if (type == IFX_OVERDRIVE) y = d / (1.0f + std::abs (d));
-                else if (type == IFX_DISTORTION) y = juce::jlimit (-0.7f, 0.7f, d) * 1.2f;
-                else y = std::tanh (d + 0.2f * d * d) - 0.04f;
-                float bp, hp;
-                y = filt[c].tick (y, bp, hp);
-                x[i] = mixWet (x[i], y, p2);
-            }
+        const float knee = (overdrive ? 0.50119f : 0.39811f) * 32767.0f;   // 10^-0.3 / 10^-0.4
+        const float norm = 32767.0f / (knee + (overdrive ? 10000.0f : 8000.0f));
+        const float a = juce::jmin (1.0f, std::abs (x)) * 32768.0f;
+        const float y = a < knee ? a : knee + std::pow (a - knee, overdrive ? 0.07f : 0.05f);
+        return std::copysign (y * norm / 32768.0f, x);
     }
 
-    void crusher (float* L, float* R, int n)
+    // As in the original CIFXOverdrive/Distortion/AmpDistortion: p0 = drive, p1 = tone (low-pass),
+    // p2 = output level; fully wet. Amp distortion shares the distortion curve with a darker tone range.
+    void drive (float* L, float* R, int n)
     {
-        const int hold = 1 + (int) (p0 * 31.0f);
-        const float levels = std::pow (2.0f, 16.0f - p1 * 14.0f);
+        const bool od = type == IFX_OVERDRIVE;
+        const float gain = 1.0f + p0 * (od ? 3.0f : 7.0f);
+        const float toneScale = od ? 0.5f : type == IFX_DISTORTION ? 0.9f : 0.215f;
+        const float fc = 1000.0f + toneScale * (float) cutoffHz (p1);
+        driveLp[0].lowpass (fc, fs); driveLp[1].lowpass (fc, fs);
         for (int i = 0; i < n; ++i)
         {
-            if (++crushCount >= hold)
-            {
-                crushCount = 0;
-                crushHold[0] = std::round (L[i] * levels) / levels;
-                crushHold[1] = std::round (R[i] * levels) / levels;
-            }
-            L[i] = mixWet (L[i], crushHold[0], p2); R[i] = mixWet (R[i], crushHold[1], p2);
+            L[i] = driveLp[0].tick (driveCurve (L[i] * gain, od)) * p2;
+            R[i] = driveLp[1].tick (driveCurve (R[i] * gain, od)) * p2;
         }
     }
 
-    void lpnoise (float* L, float* R, int n)
+    // As in the original CIFXCrusher: p0 = sample-and-hold rate (1 Hz .. 192 kHz, cubic),
+    // p1 = resolution (1 .. 17 bits, squared), p2 = low-pass cutoff; fully wet.
+    void crusher (float* L, float* R, int n)
     {
-        const float fc = (float) cutoffHz (1.0f - 0.45f * p0);
-        filt[0].set (fc, fs, 0.2f); filt[1].set (fc, fs, 0.2f);
+        const float rate = 1.0f + p0 * p0 * p0 * 191999.0f;
+        const float step = 2.0f / std::pow (2.0f, p1 * p1 * 16.0f + 1.0f);   // in [-1, 1] units
+        const float fc = (float) cutoffHz (p2);
+        crushLp[0].lowpass (fc, fs); crushLp[1].lowpass (fc, fs);
         for (int i = 0; i < n; ++i)
         {
-            float bp, hp;
-            const float noise = (rng.nextFloat() * 2 - 1) * 0.02f * p1;
-            const float crackle = rng.nextFloat() < p2 * 0.0008f ? (rng.nextFloat() * 2 - 1) * 0.5f : 0.0f;
-            L[i] = filt[0].tick (L[i], bp, hp) + noise + crackle;
-            R[i] = filt[1].tick (R[i], bp, hp) + noise + crackle;
+            crushPhase += rate / fs;
+            if (crushPhase >= 1.0f)
+            {
+                crushPhase -= std::floor (crushPhase);
+                crushHold[0] = std::round (L[i] / step) * step;
+                crushHold[1] = std::round (R[i] / step) * step;
+            }
+            L[i] = crushLp[0].tick (crushHold[0]);
+            R[i] = crushLp[1].tick (crushHold[1]);
+        }
+    }
+
+    // Record surface noise added to the dry signal, as in the original CIFXLPNoise:
+    // p0 = crackle, p1 = dirt (both squared), p2 = year 1950..2000 (sets the noise band).
+    void lpnoise (float* L, float* R, int n)
+    {
+        const float year = juce::jlimit (0.0f, 1.0f, p2);
+        const float top = 0.46f * fs;
+        noiseHp.highpass (juce::jmin (top, 50.0f + 0.05f * (float) cutoffHz (1.0f - year)), fs);
+        noiseLp.lowpass (juce::jmin (top, 3000.0f + 0.75f * (float) cutoffHz (year)), fs);
+        auto glide = [] (float& v, float target) { v = target > v ? juce::jmin (target, v + 0.0003f) : juce::jmax (target, v - 0.0003f); };
+        for (int i = 0; i < n; ++i)
+        {
+            glide (crackleLevel, p0);
+            glide (dirtLevel, p1);
+            const int r = rng.nextInt (32769) + rng.nextInt (32769);
+            float noise = (float) (r - 32768) * (0.02f / 32768.0f) * dirtLevel * dirtLevel;
+            crackleClock += (float) r * (750.0f / 65536.0f);
+            if (crackleClock >= fs)
+            {
+                crackleClock = std::fmod (crackleClock, fs);
+                float c = (float) rng.nextInt (32769) / 32768.0f;
+                for (int k = 0; k < 8; ++k) c *= c;   // ^256: sparse, mostly tiny pops
+                noise += c * crackleLevel * crackleLevel;
+            }
+            const float y = noiseLp.tick (noiseHp.tick (noise));
+            L[i] += y; R[i] += y;
         }
     }
 
@@ -475,6 +537,13 @@ public:
         rp.damping = juce::jlimit (0.0f, 1.0f, 1.0f - tone);
         rp.wetLevel = 1.0f; rp.dryLevel = 0.0f; rp.width = 1.0f;
         reverb.setParameters (rp);
+    }
+    // Clears the chorus/reverb tails (used when a non-finite sample has to be flushed).
+    void reset()
+    {
+        for (auto& d : cd) d.clear();
+        for (auto& d : pre) d.clear();
+        reverb.reset();
     }
     void clear (int n) { for (auto& b : bus) std::fill (b.begin(), b.begin() + n, 0.0f); }
     float* chorusL() { return bus[0].data(); }
